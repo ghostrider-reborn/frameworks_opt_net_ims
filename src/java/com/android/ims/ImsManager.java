@@ -432,28 +432,20 @@ public class ImsManager {
     }
 
     /**
-     * Returns the user configuration of Enhanced 4G LTE Mode setting for slot. If the option is
-     * not editable ({@link CarrierConfigManager#KEY_EDITABLE_ENHANCED_4G_LTE_BOOL} is false), or
-     * the setting is not initialized, this method will return default value specified by
-     * {@link CarrierConfigManager#KEY_ENHANCED_4G_LTE_ON_BY_DEFAULT_BOOL}.
-     *
-     * Note that even if the setting was set, it may no longer be editable. If this is the case we
-     * return the default value.
+     * Returns the user configuration of Enhanced 4G LTE Mode setting for slot.
      */
     public boolean isEnhanced4gLteModeSettingEnabledByUser() {
-        int setting = SubscriptionManager.getIntegerSubscriptionProperty(
-                getSubId(), SubscriptionManager.ENHANCED_4G_MODE_ENABLED,
-                SUB_PROPERTY_NOT_INITIALIZED, mContext);
-        boolean onByDefault = getBooleanCarrierConfig(
-                CarrierConfigManager.KEY_ENHANCED_4G_LTE_ON_BY_DEFAULT_BOOL);
-
-        // If Enhanced 4G LTE Mode is uneditable or not initialized, we use the default value
-        if (!getBooleanCarrierConfig(CarrierConfigManager.KEY_EDITABLE_ENHANCED_4G_LTE_BOOL)
-                || setting == SUB_PROPERTY_NOT_INITIALIZED) {
-            return onByDefault;
-        } else {
-            return (setting == ImsConfig.FeatureValueConstants.ON);
+        // If user can't edit Enhanced 4G LTE Mode, it assumes Enhanced 4G LTE Mode is always true.
+        // If user changes SIM from editable mode to uneditable mode, need to return true.
+        if (!getBooleanCarrierConfig(
+                CarrierConfigManager.KEY_EDITABLE_ENHANCED_4G_LTE_BOOL)) {
+            return true;
         }
+        int enabled = android.provider.Settings.Global.getInt(
+                mContext.getContentResolver(),
+                android.provider.Settings.Global.ENHANCED_4G_MODE_ENABLED,
+                ImsConfig.FeatureValueConstants.ON);
+        return (enabled == 1);
     }
 
     /**
@@ -472,34 +464,34 @@ public class ImsManager {
     }
 
     /**
-     * Change persistent Enhanced 4G LTE Mode setting. If the option is not editable
+     * Change persistent Enhanced 4G LTE Mode setting. If the the option is not editable
      * ({@link CarrierConfigManager#KEY_EDITABLE_ENHANCED_4G_LTE_BOOL} is false), this method will
-     * set the setting to the default value specified by
-     * {@link CarrierConfigManager#KEY_ENHANCED_4G_LTE_ON_BY_DEFAULT_BOOL}.
+     * always set the setting to true.
      *
      */
     public void setEnhanced4gLteModeSetting(boolean enabled) {
-        // If editable=false, we must keep default advanced 4G mode.
-        if (!getBooleanCarrierConfig(CarrierConfigManager.KEY_EDITABLE_ENHANCED_4G_LTE_BOOL)) {
-            enabled = getBooleanCarrierConfig(
-                    CarrierConfigManager.KEY_ENHANCED_4G_LTE_ON_BY_DEFAULT_BOOL);
+        // If false, we must always keep advanced 4G mode set to true (1).
+        int value = getBooleanCarrierConfig(
+                CarrierConfigManager.KEY_EDITABLE_ENHANCED_4G_LTE_BOOL) ? (enabled ? 1: 0) : 1;
+
+        try {
+           int prevSetting = android.provider.Settings.Global.getInt(mContext.getContentResolver(),
+                    android.provider.Settings.Global.ENHANCED_4G_MODE_ENABLED);
+           if (prevSetting == value) {
+               // Don't trigger setAdvanced4GMode if the setting hasn't changed.
+               return;
+           }
+        } catch (Exception e) {
+            // Setting doesn't exist yet, so set it below.
         }
 
-        int prevSetting = SubscriptionManager.getIntegerSubscriptionProperty(
-                getSubId(), SubscriptionManager.ENHANCED_4G_MODE_ENABLED,
-                SUB_PROPERTY_NOT_INITIALIZED, mContext);
-
-        if (prevSetting != (enabled ?
-                   ImsConfig.FeatureValueConstants.ON :
-                   ImsConfig.FeatureValueConstants.OFF)) {
-            SubscriptionManager.setSubscriptionProperty(getSubId(),
-                    SubscriptionManager.ENHANCED_4G_MODE_ENABLED, booleanToPropertyString(enabled));
-            if (isNonTtyOrTtyOnVolteEnabled()) {
-                try {
-                    setAdvanced4GMode(enabled);
-                } catch (ImsException ie) {
-                    // do nothing
-                }
+        android.provider.Settings.Global.putInt(mContext.getContentResolver(),
+                android.provider.Settings.Global.ENHANCED_4G_MODE_ENABLED, value);
+        if (isNonTtyOrTtyOnVolteEnabled()) {
+            try {
+                setAdvanced4GMode(enabled);
+            } catch (ImsException ie) {
+                // do nothing
             }
         }
     }
@@ -2306,10 +2298,9 @@ public class ImsManager {
      */
     public void factoryReset() {
         // Set VoLTE to default
-        SubscriptionManager.setSubscriptionProperty(getSubId(),
-                SubscriptionManager.ENHANCED_4G_MODE_ENABLED,
-                booleanToPropertyString(getBooleanCarrierConfig(
-                        CarrierConfigManager.KEY_ENHANCED_4G_LTE_ON_BY_DEFAULT_BOOL)));
+        android.provider.Settings.Global.putInt(mContext.getContentResolver(),
+                android.provider.Settings.Global.ENHANCED_4G_MODE_ENABLED,
+                ImsConfig.FeatureValueConstants.ON);
 
         // Set VoWiFi to default
         SubscriptionManager.setSubscriptionProperty(getSubId(),
